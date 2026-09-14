@@ -1290,6 +1290,13 @@ public:
     */
     virtual VST3ClientExtensions* getVST3ClientExtensions();
 
+    /** Returns a non-owning pointer to an object that receives Audio Unit specific host
+        information regarding this AudioProcessor, or nullptr (the default) to ignore it.
+
+        @see AudioUnitClientExtensions
+    */
+    virtual AudioUnitClientExtensions* getAudioUnitClientExtensions()   { return nullptr; }
+
     /** Returns a non-owning pointer to an object that implements ARA specific information
         regarding this AudioProcessor.
 

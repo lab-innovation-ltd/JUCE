@@ -125,6 +125,7 @@ struct AudioProcessorHolder
 
     ScopedJuceInitialiser_GUI scopedInitialiser;
     std::unique_ptr<AudioProcessor> juceFilter { createPluginFilterOfType (AudioProcessor::wrapperType_AudioUnit) };
+    std::map<std::pair<AudioUnitScope, AudioUnitElement>, double> presentationLatencies;  // last host writes, read back by GetProperty
 };
 
 //==============================================================================
@@ -410,6 +411,16 @@ public:
                                      UInt32& outDataSize,
                                      bool& outWritable) override
     {
+        // kAudioUnitProperty_PresentationLatency is written by hosts such as Logic Pro to
+        // declare the latency downstream of a bus; stock JUCE refused it as unknown. It is
+        // accepted for every scope and handed to AudioProcessor::getAudioUnitClientExtensions().
+        if (inID == kAudioUnitProperty_PresentationLatency)
+        {
+            outDataSize = sizeof (Float64);
+            outWritable = true;
+            return noErr;
+        }
+
         if (inScope == kAudioUnitScope_Global)
         {
             switch (inID)
@@ -525,6 +536,16 @@ public:
                                  AudioUnitElement inElement,
                                  void* outData) override
     {
+        if (inID == kAudioUnitProperty_PresentationLatency)
+        {
+            if (auto* out = static_cast<Float64*> (outData))
+            {
+                const auto it = presentationLatencies.find ({ inScope, inElement });
+                *out = it != presentationLatencies.end() ? it->second : 0.0;
+            }
+            return noErr;
+        }
+
         if (inScope == kAudioUnitScope_Global)
         {
             switch (inID)
@@ -725,6 +746,21 @@ public:
                                  const void* inData,
                                  UInt32 inDataSize) override
     {
+        if (inID == kAudioUnitProperty_PresentationLatency)
+        {
+            if (inData == nullptr || inDataSize < sizeof (Float64))
+                return kAudioUnitErr_InvalidPropertyValue;
+
+            const auto seconds = (double) *static_cast<const Float64*> (inData);
+            presentationLatencies[{ inScope, inElement }] = seconds;
+
+            if (juceFilter != nullptr)
+                if (auto* ext = juceFilter->getAudioUnitClientExtensions())
+                    ext->presentationLatencyChanged ((unsigned int) inScope, (unsigned int) inElement, seconds);
+
+            return noErr;
+        }
+
 
         if (inScope == kAudioUnitScope_Global)
         {
