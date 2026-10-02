@@ -437,6 +437,13 @@ bool MessageManager::postMessageToSystemQueue (MessageBase* message)
     return true;
 }
 
+void MessageManager::setRunLoopObserverDelivery (bool enabled)
+{
+    jassert (appDelegate != nil);
+    JUCE_ASSERT_MESSAGE_THREAD
+    appDelegate->messageQueue.setObserverDelivery (enabled);
+}
+
 void MessageManager::broadcastMessage (const String& message)
 {
     NSDictionary* info = [NSDictionary dictionaryWithObject: juceStringToNS (message)

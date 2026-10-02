@@ -224,6 +224,23 @@ public:
     */
     static bool existsAndIsCurrentThread() noexcept;
 
+   #if JUCE_MAC
+    /** Also delivers the pending messages from a run-loop observer at the start of every pass
+        of the main run loop.
+
+        JUCE's queue is a run-loop source. When another framework owns the main run loop and its
+        own sources are signalled on every pass (a host toolkit with an event ready each pass),
+        the run loop performs those first and returns, and JUCE's source can wait for seconds.
+        With this enabled, the messages queued at the start of each pass are delivered before
+        that pass's sources, so a message waits at most one pass. Messages posted during that
+        delivery wait for the next pass.
+
+        Off by default. Call it on the message thread, after the MessageManager exists. A plug-in
+        never needs it.
+    */
+    static void setRunLoopObserverDelivery (bool enabled);
+   #endif
+
     //==============================================================================
     /** Sends a message to all other JUCE applications that are running.
 

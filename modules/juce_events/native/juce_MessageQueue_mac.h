@@ -58,6 +58,9 @@ public:
 
     ~MessageQueue() noexcept
     {
+       #if JUCE_MAC
+        setObserverDelivery (false);
+       #endif
         CFRunLoopRemoveSource (runLoop, runLoopSource.get(), kCFRunLoopCommonModes);
         CFRunLoopSourceInvalidate (runLoopSource.get());
     }
@@ -68,10 +71,39 @@ public:
         wakeUp();
     }
 
+   #if JUCE_MAC
+    // See MessageManager::setRunLoopObserverDelivery.
+    void setObserverDelivery (bool enabled)
+    {
+        if (enabled == (runLoopObserver != nullptr))
+            return;
+
+        if (enabled)
+        {
+            CFRunLoopObserverContext observerContext;
+            zerostruct (observerContext);
+            observerContext.info = this;
+            runLoopObserver.reset (CFRunLoopObserverCreate (kCFAllocatorDefault, kCFRunLoopBeforeSources,
+                                                            true, 0, runLoopObserverCallback, &observerContext));
+            CFRunLoopAddObserver (runLoop, runLoopObserver.get(), kCFRunLoopCommonModes);
+        }
+        else
+        {
+            CFRunLoopRemoveObserver (runLoop, runLoopObserver.get(), kCFRunLoopCommonModes);
+            CFRunLoopObserverInvalidate (runLoopObserver.get());
+            runLoopObserver.reset();
+        }
+    }
+   #endif
+
 private:
     ReferenceCountedArray<MessageManager::MessageBase, CriticalSection> messages;
     CFRunLoopRef runLoop;
     CFUniquePtr<CFRunLoopSourceRef> runLoopSource;
+   #if JUCE_MAC
+    CFUniquePtr<CFRunLoopObserverRef> runLoopObserver;
+    bool observerDelivering = false;
+   #endif
 
     void wakeUp() noexcept
     {
@@ -111,6 +143,28 @@ private:
     {
         static_cast<MessageQueue*> (info)->runLoopCallback();
     }
+
+   #if JUCE_MAC
+    // Delivers only the messages queued at entry, so a message that re-posts itself cannot keep
+    // the observer spinning. A callback that runs a nested run loop gets no observer delivery
+    // until it returns; the source still serves the queue meanwhile.
+    void deliverPendingFromObserver() noexcept
+    {
+        if (observerDelivering)
+            return;
+
+        const ScopedValueSetter<bool> delivering (observerDelivering, true);
+
+        for (int pending = messages.size(); pending > 0; --pending)
+            if (! deliverNextMessage())
+                return;
+    }
+
+    static void runLoopObserverCallback (CFRunLoopObserverRef, CFRunLoopActivity, void* info) noexcept
+    {
+        static_cast<MessageQueue*> (info)->deliverPendingFromObserver();
+    }
+   #endif
 };
 
 } // namespace juce
